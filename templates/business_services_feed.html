@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  {{ template "head" . }}
+</head>
+<body class="page-feed">
+  <main class="screen screen--feed">
+
+    <article class="feed-card">
+      <!-- Фоновое видео -->
+      {{ if .video_url }}
+      <video class="feed-card__video"
+             src="{{ .video_url }}"
+             autoplay muted loop playsinline></video>
+      {{ end }}
+
+      <!-- Затемнение -->
+      <div class="feed-card__overlay"></div>
+
+      <!-- Верх: бейдж -->
+      <div class="feed-card__top">
+        <span class="feed-card__badge">Business Services</span>
+      </div>
+
+      <!-- Правый блок: поля по теме + лайк -->
+      <div class="feed-card__side">
+        <div class="side-field">
+          <span class="side-value">{{ .order.Price }} ₽</span>
+          <span class="side-label">Цена</span>
+        </div>
+        <div class="side-field">
+          <span class="side-value">{{ .deadline }}</span>
+          <span class="side-label">Дата заказа</span>
+        </div>
+        <div class="side-likes">
+          {{ template "like_icon" . }}
+          <span>{{ .likes }}</span>
+        </div>
+      </div>
+
+      <!-- Низ: описание + Больше/меньше + Следующий -->
+      <div class="feed-card__bottom">
+        <h1 class="feed-card__title">{{ .order.Title }}</h1>
+        <p class="feed-card__desc">{{ .order.Description }}</p>
+
+        <div class="feed-card__actions">
+         <a class="btn-more" href="/business_services_feed/{{ .order.ID }}">Больше</a>
+         <a class="btn-next" href="/business_services_feed/{{ .order.ID }}?next=true" aria-label="Следующий">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </article>
+
+  </main>
+
+  {{ template "bottom_nav" . }}
+</body>
+</html>
+

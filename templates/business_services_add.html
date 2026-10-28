@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  {{ template "head" . }}
+</head>
+<body class="page-add">
+  <main class="screen">
+    <h1 class="screen-title">Новая заявка</h1>
+
+    <!-- Форма без action — данные никуда не отправляются -->
+    <form class="add-form" onsubmit="return false">
+
+      <!-- ====== Фото ====== -->
+      <label class="field-label">Фото</label>
+      <div class="add-media add-media--image"
+           id="photo-preview"
+           style="background-image: url('{{ .image_url }}');">
+      </div>
+      <label class="btn btn-primary" for="photo-input">Выбор фото</label>
+      <input type="file" id="photo-input" name="photo" accept="image/*" hidden />
+
+      <!-- ====== Видео ====== -->
+      <label class="field-label">Видео</label>
+      <div class="add-media add-media--video" id="video-preview">
+        {{ if .video_url }}
+        <video id="video-player" src="{{ .video_url }}" muted loop playsinline controls></video>
+        {{ else }}
+        <div class="add-media__empty">Видео не задано</div>
+        {{ end }}
+      </div>
+      <label class="btn btn-primary" for="video-input">Выбор видео</label>
+      <input type="file" id="video-input" name="video" accept="video/*" hidden />
+
+      <hr class="divider" />
+
+      <!-- ====== Текстовые поля ====== -->
+      <label class="field-label" for="title">Название</label>
+      <input id="title" name="title" type="text" class="input"
+             value="{{ .order.Title }}" readonly />
+
+      <label class="field-label" for="description">Описание проблемы</label>
+      <textarea id="description" name="description" class="textarea"
+                readonly>{{ .order.Description }}</textarea>
+
+      <label class="field-label" for="price">Цена (₽)</label>
+      <input id="price" name="price" type="number" class="input"
+             value="{{ .order.Price }}" readonly />
+
+      <label class="field-label" for="deadline">Дата заказа</label>
+      <input id="deadline" name="deadline" type="text" class="input"
+             value="{{ .order.DeadlineStr }}" readonly />
+    </form>
+  </main>
+
+  {{ template "bottom_nav" . }}
+
+
+  <!-- <script>
+    document.getElementById('photo-input').addEventListener('change', function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      document.getElementById('photo-preview').style.backgroundImage = "url('" + url + "')";
+    });
+
+    document.getElementById('video-input').addEventListener('change', function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const wrap = document.getElementById('video-preview');
+      wrap.innerHTML = '<video src="' + url + '" muted loop playsinline controls></video>';
+    });
+  </script> -->
+</body>
+</html>

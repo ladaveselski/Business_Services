@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  {{ template "head" . }}
+</head>
+<body class="page-grid">
+  <main class="screen">
+    <h1 class="screen-title">Все заявки</h1>
+
+    <!-- Фильтр по цене (числовое поле, не текстовое) -->
+    <form action="/business_services_grid" method="GET" class="filter">
+      <input type="number" name="min" class="input" placeholder="Цена от" value="{{ .min }}" />
+      <input type="number" name="max" class="input" placeholder="до" value="{{ .max }}" />
+      <button type="submit" class="btn btn-primary filter__btn">Применить</button>
+    </form>
+
+    <!-- Сетка 2 столбца -->
+    <div class="grid">
+      {{ range .cards }}
+      <a class="grid-card" href="/business_services_feed/{{ .ID }}">
+        <div class="grid-card__media" style="background-image: url('{{ .ImageURL }}');">
+          <div class="grid-card__likes">
+            {{ template "like_icon" . }}
+            <span>{{ .Likes }}</span>
+          </div>
+        </div>
+        <h3 class="grid-card__title">{{ .Title }}</h3>
+        <span class="grid-card__price">{{ .Price }} ₽</span>
+      </a>
+      {{ end }}
+    </div>
+  </main>
+
+  {{ template "bottom_nav" . }}
+</body>
+</html>
