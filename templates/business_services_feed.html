@@ -25,7 +25,7 @@
       <!-- Правый блок: поля по теме + лайк -->
       <div class="feed-card__side">
         <div class="side-field">
-          <span class="side-value">{{ .order.Price }} ₽</span>
+          <span class="side-value">{{ .service.Price }} ₽</span>
           <span class="side-label">Цена</span>
         </div>
         <div class="side-field">
@@ -40,12 +40,12 @@
 
       <!-- Низ: описание + Больше/меньше + Следующий -->
       <div class="feed-card__bottom">
-        <h1 class="feed-card__title">{{ .order.Title }}</h1>
-        <p class="feed-card__desc">{{ .order.Description }}</p>
+        <h1 class="feed-card__title">{{ .service.Title }}</h1>
+        <p class="feed-card__desc">{{ .service.Description }}</p>
 
         <div class="feed-card__actions">
-         <a class="btn-more" href="/business_services_feed/{{ .order.ID }}">Больше</a>
-         <a class="btn-next" href="/business_services_feed/{{ .order.ID }}?next=true" aria-label="Следующий">
+          <a class="btn-more" href="/business_services_feed/{{ .service.ID }}">Больше</a>
+          <a class="btn-next" href="/business_services_feed/{{ .service.ID }}?next=true" aria-label="Следующий">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 9l6 6 6-6"/>
             </svg>
@@ -59,4 +59,3 @@
   {{ template "bottom_nav" . }}
 </body>
 </html>
-

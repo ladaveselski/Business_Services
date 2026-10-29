@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
 	"business_services/internal/app/repository"
@@ -24,21 +25,20 @@ func NewHandler(r *repository.Repository, s *storage.Storage) *Handler {
 	return &Handler{Repository: r, Storage: s}
 }
 
-// ---------- GET /business_services_feed ----------
+// =====================================================================
+// GET-ЗАПРОСЫ (3 штуки)
+// =====================================================================
+
+// 1. GET /business_services_feed и /business_services_feed/:id
 func (h *Handler) Feed(ctx *gin.Context) {
 	idStr := ctx.Param("id")
 	next := ctx.Query("next") == "true"
 
-	var order repository.BusinessServicesOrder
+	var service repository.Service
 	var err error
 
 	if idStr == "" {
-		orders, e := h.Repository.GetPublished()
-		if e != nil || len(orders) == 0 {
-			ctx.Status(http.StatusNotFound)
-			return
-		}
-		order = orders[0]
+		service, err = h.Repository.GetFirstPublished()
 	} else {
 		id, e := strconv.Atoi(idStr)
 		if e != nil {
@@ -46,63 +46,81 @@ func (h *Handler) Feed(ctx *gin.Context) {
 			return
 		}
 		if next {
-			order, err = h.Repository.GetNextPublished(id)
+			service, err = h.Repository.GetNextPublished(id)
 		} else {
-			order, err = h.Repository.GetPublishedByID(id)
-		}
-		if err != nil {
-			logrus.WithError(err).Warn("лента: услуга не найдена")
-			ctx.Status(http.StatusNotFound)
-			return
+			service, err = h.Repository.GetPublishedByID(id)
 		}
 	}
 
+	if err != nil {
+		logrus.WithError(err).Warn("лента: услуга не найдена")
+		ctx.String(http.StatusNotFound, "Услуга не найдена или удалена")
+		return
+	}
+
+	// Считаем лайки через GORM (по заданию лабы 2 только отображение)
+	var likes int64
+	h.Repository.DB.Table("likes").Where("service_id = ?", service.ID).Count(&likes)
+
 	ctx.HTML(http.StatusOK, "business_services_feed.html", gin.H{
-		"title":     order.Title,
+		"title":     service.Title,
 		"active":    "feed",
-		"order":     order,
-		"likes":     order.LikesCount(),
-		"image_url": order.ImageURL(),
-		"video_url": order.VideoURL(),
-		"deadline":  order.DeadlineStr(),
+		"service":   service,
+		"likes":     likes,
+		"image_url": service.ImageURL(h.Storage),
+		"video_url": service.VideoURL(h.Storage),
+		"deadline":  service.DeadlineStr(),
 	})
 }
 
-// ---------- GET /business_services_add ----------
+// 2. GET /business_services_add
 func (h *Handler) AddPage(ctx *gin.Context) {
-	draft, err := h.Repository.GetDraft()
+	// Ищем черновик для пользователя с ID=1
+	draft, err := h.Repository.GetDraftByCreator(1)
+
+	// Если черновика нет, передаем пустую структуру
 	if err != nil {
-		logrus.WithError(err).Warn("черновик не найден")
+		draft = repository.Service{}
 	}
 
 	ctx.HTML(http.StatusOK, "business_services_add.html", gin.H{
 		"title":     "Новая заявка",
 		"active":    "add",
-		"order":     draft,
-		"image_url": draft.ImageURL(),
-		"video_url": draft.VideoURL(),
+		"service":   draft,
+		"is_draft":  draft.ID != 0,
+		"image_url": draft.ImageURL(h.Storage),
+		"video_url": draft.VideoURL(h.Storage),
 	})
 }
 
-// ---------- GET /business_services_grid ----------
+// 3. GET /business_services_grid
 func (h *Handler) Grid(ctx *gin.Context) {
 	minStr := ctx.Query("min")
 	maxStr := ctx.Query("max")
 	min, _ := strconv.Atoi(minStr)
 	max, _ := strconv.Atoi(maxStr)
 
-	orders, err := h.Repository.GetPublishedFiltered(min, max)
+	services, err := h.Repository.GetPublishedFiltered(min, max)
 	if err != nil {
 		logrus.WithError(err).Error("плитка: ошибка выборки")
 	}
 
 	type GridCard struct {
-		repository.BusinessServicesOrder
-		Likes int
+		repository.Service
+		Likes    int
+		ImageURL string
 	}
-	cards := make([]GridCard, 0, len(orders))
-	for _, o := range orders {
-		cards = append(cards, GridCard{BusinessServicesOrder: o, Likes: o.LikesCount()})
+
+	cards := make([]GridCard, 0, len(services))
+	for _, s := range services {
+		var likes int64
+		h.Repository.DB.Table("likes").Where("service_id = ?", s.ID).Count(&likes)
+
+		cards = append(cards, GridCard{
+			Service:  s,
+			Likes:    int(likes),
+			ImageURL: s.ImageURL(h.Storage),
+		})
 	}
 
 	ctx.HTML(http.StatusOK, "business_services_grid.html", gin.H{
@@ -114,11 +132,89 @@ func (h *Handler) Grid(ctx *gin.Context) {
 	})
 }
 
-// ---------- GET /business_services_media/*key ----------
+// =====================================================================
+// POST-ЗАПРОСЫ (3 штуки)
+// =====================================================================
+
+// 4. POST /business_services_add (Кнопка "Далее" — создание/обновление черновика)
+func (h *Handler) CreateDraft(ctx *gin.Context) {
+	title := ctx.PostForm("title")
+
+	// По заданию: новые фото и видео не сохраняются, но заполняем неверные url
+	invalidImage := "invalid/image_" + uuid.NewString() + ".jpg"
+	invalidVideo := "invalid/video_" + uuid.NewString() + ".mp4"
+
+	// Проверяем, есть ли уже черновик у пользователя 1
+	existingDraft, err := h.Repository.GetDraftByCreator(1)
+
+	if err == nil && existingDraft.ID != 0 {
+		// Черновик уже есть — обновляем название и редиректим на ту же страницу
+		h.Repository.UpdateDraftTitle(existingDraft.ID, title)
+		ctx.Redirect(http.StatusSeeOther, "/business_services_add")
+		return
+	}
+
+	// Создаем новый черновик
+	err = h.Repository.CreateDraft(&repository.Service{
+		Title:     title,
+		Status:    "draft",
+		ImageKey:  invalidImage,
+		VideoKey:  invalidVideo,
+		CreatorID: 1,
+	})
+
+	if err != nil {
+		logrus.WithError(err).Error("ошибка создания черновика")
+		ctx.String(http.StatusInternalServerError, "Ошибка создания")
+		return
+	}
+
+	ctx.Redirect(http.StatusSeeOther, "/business_services_add")
+}
+
+// 5. POST /business_services_publish (Публикация черновика)
+func (h *Handler) Publish(ctx *gin.Context) {
+	idStr := ctx.PostForm("id")
+	id, _ := strconv.Atoi(idStr)
+
+	description := ctx.PostForm("description")
+	priceStr := ctx.PostForm("price")
+	price, _ := strconv.Atoi(priceStr)
+	deadlineStr := ctx.PostForm("deadline") // формат HTML: 2026-10-05T14:30
+
+	err := h.Repository.PublishDraft(id, description, price, deadlineStr)
+	if err != nil {
+		logrus.WithError(err).Error("ошибка публикации")
+		ctx.String(http.StatusInternalServerError, "Ошибка публикации")
+		return
+	}
+
+	ctx.Redirect(http.StatusSeeOther, "/business_services_feed")
+}
+
+// 6. POST /business_services_delete (Логическое удаление через SQL UPDATE, без ORM)
+func (h *Handler) Delete(ctx *gin.Context) {
+	idStr := ctx.PostForm("id")
+	id, _ := strconv.Atoi(idStr)
+
+	err := h.Repository.LogicalDeleteSQL(id)
+	if err != nil {
+		logrus.WithError(err).Error("ошибка удаления")
+		ctx.String(http.StatusInternalServerError, "Ошибка удаления")
+		return
+	}
+
+	ctx.Redirect(http.StatusSeeOther, "/business_services_grid")
+}
+
+// =====================================================================
+// МЕДИА
+// =====================================================================
+
 func (h *Handler) Media(ctx *gin.Context) {
 	key := strings.TrimPrefix(ctx.Param("key"), "/")
-	if key == "" {
-		ctx.Status(http.StatusNotFound)
+	if key == "" || strings.HasPrefix(key, "invalid/") {
+		ctx.File("./resources/static/default.jpg")
 		return
 	}
 
@@ -134,15 +230,13 @@ func (h *Handler) mediaFromMinIO(ctx *gin.Context, key string) {
 
 	info, err := h.Storage.Stat(bg, key)
 	if err != nil {
-		logrus.WithError(err).WithField("key", key).Warn("media not found in MinIO, fallback to local")
-		h.mediaFromLocal(ctx, key)
+		ctx.File("./resources/static/default.jpg")
 		return
 	}
 
 	obj, err := h.Storage.Get(bg, key)
 	if err != nil {
-		logrus.WithError(err).Error("media get from MinIO, fallback to local")
-		h.mediaFromLocal(ctx, key)
+		ctx.File("./resources/static/default.jpg")
 		return
 	}
 	defer obj.Close()
@@ -153,43 +247,30 @@ func (h *Handler) mediaFromMinIO(ctx *gin.Context, key string) {
 	ctx.Header("ETag", info.ETag)
 
 	ctx.Status(http.StatusOK)
-	if _, err := io.Copy(ctx.Writer, obj); err != nil {
-		logrus.WithError(err).Error("media stream from MinIO")
-	}
+	io.Copy(ctx.Writer, obj)
 }
 
 func (h *Handler) mediaFromLocal(ctx *gin.Context, key string) {
 	name := filepath.Base(key)
-	if name == "" || name == "." || name == "/" {
-		ctx.Status(http.StatusNotFound)
-		return
-	}
-
 	localPath := filepath.Join("resources", "seed", name)
 
 	info, err := os.Stat(localPath)
 	if err != nil || info.IsDir() {
-		logrus.WithError(err).WithField("path", localPath).Warn("media not found locally")
-		ctx.Status(http.StatusNotFound)
+		ctx.File("./resources/static/default.jpg")
 		return
 	}
 
 	f, err := os.Open(localPath)
 	if err != nil {
-		logrus.WithError(err).Error("open local media")
-		ctx.Status(http.StatusInternalServerError)
+		ctx.File("./resources/static/default.jpg")
 		return
 	}
 	defer f.Close()
 
 	ctx.Header("Content-Type", contentTypeByExt(filepath.Ext(name)))
 	ctx.Header("Content-Length", strconv.FormatInt(info.Size(), 10))
-	ctx.Header("Cache-Control", "public, max-age=3600")
-
 	ctx.Status(http.StatusOK)
-	if _, err := io.Copy(ctx.Writer, f); err != nil {
-		logrus.WithError(err).Error("media stream from local")
-	}
+	io.Copy(ctx.Writer, f)
 }
 
 func contentTypeByExt(ext string) string {
@@ -198,14 +279,8 @@ func contentTypeByExt(ext string) string {
 		return "image/jpeg"
 	case ".png":
 		return "image/png"
-	case ".webp":
-		return "image/webp"
-	case ".gif":
-		return "image/gif"
 	case ".mp4":
 		return "video/mp4"
-	case ".webm":
-		return "video/webm"
 	}
 	return "application/octet-stream"
 }
