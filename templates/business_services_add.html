@@ -7,69 +7,71 @@
   <main class="screen">
     <h1 class="screen-title">Новая заявка</h1>
 
-    <!-- Форма без action — данные никуда не отправляются -->
-    <form class="add-form" onsubmit="return false">
+    <!-- Если черновик уже есть (is_draft = true) -->
+    {{ if .is_draft }}
+      <form action="/business_services_publish" method="POST" class="add-form">
+        <input type="hidden" name="id" value="{{ .service.ID }}">
 
-      <!-- ====== Фото ====== -->
-      <label class="field-label">Фото</label>
-      <div class="add-media add-media--image"
-           id="photo-preview"
-           style="background-image: url('{{ .image_url }}');">
-      </div>
-      <label class="btn btn-primary" for="photo-input">Выбор фото</label>
-      <input type="file" id="photo-input" name="photo" accept="image/*" hidden />
+        <label class="field-label">Фото</label>
+        <div class="add-media add-media--image" style="background-image: url('{{ .image_url }}');"></div>
+        <label class="btn btn-primary" for="photo-input">Выбор фото</label>
+        <input type="file" id="photo-input" accept="image/*" hidden />
 
-      <!-- ====== Видео ====== -->
-      <label class="field-label">Видео</label>
-      <div class="add-media add-media--video" id="video-preview">
-        {{ if .video_url }}
-        <video id="video-player" src="{{ .video_url }}" muted loop playsinline controls></video>
-        {{ else }}
-        <div class="add-media__empty">Видео не задано</div>
-        {{ end }}
-      </div>
-      <label class="btn btn-primary" for="video-input">Выбор видео</label>
-      <input type="file" id="video-input" name="video" accept="video/*" hidden />
+        <label class="field-label">Видео</label>
+        <div class="add-media add-media--video">
+          <video src="{{ .video_url }}" muted loop playsinline controls></video>
+        </div>
+        <label class="btn btn-primary" for="video-input">Выбор видео</label>
+        <input type="file" id="video-input" accept="video/*" hidden />
 
-      <hr class="divider" />
+        <hr class="divider" />
 
-      <!-- ====== Текстовые поля ====== -->
-      <label class="field-label" for="title">Название</label>
-      <input id="title" name="title" type="text" class="input"
-             value="{{ .order.Title }}" readonly />
+        <label class="field-label" for="description">Описание проблемы</label>
+        <textarea id="description" name="description" class="textarea" required>{{ .service.Description }}</textarea>
 
-      <label class="field-label" for="description">Описание проблемы</label>
-      <textarea id="description" name="description" class="textarea"
-                readonly>{{ .order.Description }}</textarea>
+        <label class="field-label" for="price">Цена (₽)</label>
+        <input id="price" name="price" type="number" class="input" value="{{ .service.Price }}" required />
 
-      <label class="field-label" for="price">Цена (₽)</label>
-      <input id="price" name="price" type="number" class="input"
-             value="{{ .order.Price }}" readonly />
+        <label class="field-label" for="deadline">Дата заказа</label>
+        <input id="deadline" name="deadline" type="datetime-local" class="input" value="{{ .service.Deadline }}" required />
 
-      <label class="field-label" for="deadline">Дата заказа</label>
-      <input id="deadline" name="deadline" type="text" class="input"
-             value="{{ .order.DeadlineStr }}" readonly />
-    </form>
+        <button type="submit" class="btn btn-primary submit-btn">Опубликовать</button>
+      </form>
+
+    <!-- Если черновика нет -->
+    {{ else }}
+      <form action="/business_services_add" method="POST" class="add-form">
+        <label class="field-label" for="title">Название</label>
+        <input id="title" name="title" type="text" class="input" placeholder="Введите название" required />
+
+        <div class="upload-placeholder">
+          <p>Фото и видео будут добавлены автоматически</p>
+        </div>
+
+        <button type="submit" class="btn btn-primary submit-btn">Далее</button>
+      </form>
+    {{ end }}
   </main>
 
   {{ template "bottom_nav" . }}
 
-
-  <!-- <script>
-    document.getElementById('photo-input').addEventListener('change', function (e) {
+  <script>
+    // Превью для фото
+    document.getElementById('photo-input')?.addEventListener('change', function (e) {
       const file = e.target.files[0];
       if (!file) return;
       const url = URL.createObjectURL(file);
-      document.getElementById('photo-preview').style.backgroundImage = "url('" + url + "')";
+      document.querySelector('.add-media--image').style.backgroundImage = "url('" + url + "')";
     });
 
-    document.getElementById('video-input').addEventListener('change', function (e) {
+    // Превью для видео
+    document.getElementById('video-input')?.addEventListener('change', function (e) {
       const file = e.target.files[0];
       if (!file) return;
       const url = URL.createObjectURL(file);
-      const wrap = document.getElementById('video-preview');
+      const wrap = document.querySelector('.add-media--video');
       wrap.innerHTML = '<video src="' + url + '" muted loop playsinline controls></video>';
     });
-  </script> -->
+  </script>
 </body>
 </html>

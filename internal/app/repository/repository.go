@@ -1,144 +1,138 @@
 package repository
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"sort"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Repository struct {
-	orders []BusinessServicesOrder
+	DB *gorm.DB
 }
 
-func NewRepository() (*Repository, error) {
-	r := &Repository{}
-	r.seed()
-	return r, nil
+func NewRepository(db *gorm.DB) (*Repository, error) {
+	return &Repository{DB: db}, nil
 }
 
-func (r *Repository) seed() {
-	r.orders = []BusinessServicesOrder{
-		{
-			ID:          1,
-			Status:      StatusPublished,
-			Title:       "Сантехника",
-			Description: "Замена смесителя в ванной комнате. Быстрая диагностика и ремонт.",
-			Price:       4500,
-			Deadline:    time.Date(2026, 10, 5, 14, 30, 0, 0, time.UTC),
-			ImageKey:    "seed/plumber.jpg",
-			VideoKey:    "seed/plumber.mp4",
-			Likes:       []int{101, 102, 103, 104, 105, 106, 107, 108, 109, 110},
-		},
-		{
-			ID:          2,
-			Status:      StatusPublished,
-			Title:       "Электрика",
-			Description: "Профессиональная диагностика для профилактики проблем.",
-			Price:       5900,
-			Deadline:    time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC),
-			ImageKey:    "seed/electrician.jpg",
-			VideoKey:    "seed/electrician.mp4",
-			Likes:       []int{201, 202, 203, 204, 205},
-		},
-		{
-			ID:          3,
-			Status:      StatusPublished,
-			Title:       "Ремонт",
-			Description: "Замена смесителя в ванной комнате. Быстрая диагностика и ремонт.",
-			Price:       5900,
-			Deadline:    time.Date(2026, 10, 7, 9, 15, 0, 0, time.UTC),
-			ImageKey:    "seed/repair.jpg",
-			VideoKey:    "seed/repair.mp4",
-			Likes:       []int{301, 302, 303},
-		},
-		{
-			ID:          4,
-			Status:      StatusPublished,
-			Title:       "Проверка мебели",
-			Description: "Контроль сохранности имущества.",
-			Price:       3200,
-			Deadline:    time.Date(2026, 10, 8, 12, 45, 0, 0, time.UTC),
-			ImageKey:    "seed/furniture.jpg",
-			VideoKey:    "seed/furniture.mp4",
-			Likes:       []int{401},
-		},
-		{
-			ID:          99,
-			Status:      StatusDraft,
-			Title:       "Новая услуга",
-			Description: "Описание проблемы...",
-			Price:       0,
-			Deadline:    time.Time{},
-			ImageKey:    "seed/plumber.jpg", // ← фото по умолчанию
-			VideoKey:    "seed/plumber.mp4", // ← видео по умолчанию
-			Likes:       []int{},
-		},
-		{
-			ID:          100,
-			Status:      StatusDeleted,
-			Title:       "Удалённая услуга",
-			Description: "Не отображается",
-			Price:       0,
-			Deadline:    time.Time{},
-			ImageKey:    "",
-			VideoKey:    "",
-			Likes:       []int{},
-		},
+// 1. GetFirstPublished — первая опубликованная (для ленты)
+func (r *Repository) GetFirstPublished() (Service, error) {
+	var service Service
+	err := r.DB.Where("status = ?", "published").Order("id ASC").First(&service).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Service{}, fmt.Errorf("нет опубликованных услуг")
+		}
+		return Service{}, err
 	}
+	return service, nil
 }
 
-func (r *Repository) GetPublished() ([]BusinessServicesOrder, error) {
-	var res []BusinessServicesOrder
-	for _, o := range r.orders {
-		if o.Status == StatusPublished {
-			res = append(res, o)
+// 2. GetPublishedByID — по ID
+func (r *Repository) GetPublishedByID(id int) (Service, error) {
+	var service Service
+	err := r.DB.Where("id = ? AND status = ?", id, "published").First(&service).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Service{}, fmt.Errorf("услуга %d не найдена или удалена", id)
+		}
+		return Service{}, err
+	}
+	return service, nil
+}
+
+// 3. GetNextPublished — следующая после ID
+func (r *Repository) GetNextPublished(currentID int) (Service, error) {
+	var service Service
+	err := r.DB.Where("id > ? AND status = ?", currentID, "published").Order("id ASC").First(&service).Error
+	if err == nil {
+		return service, nil
+	}
+	return r.GetFirstPublished()
+}
+
+// 4. GetDraftByCreator — черновик пользователя
+func (r *Repository) GetDraftByCreator(userID int) (Service, error) {
+	var service Service
+	err := r.DB.Where("creator_id = ? AND status = ?", userID, "draft").First(&service).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Service{}, fmt.Errorf("черновик не найден")
+		}
+		return Service{}, err
+	}
+	return service, nil
+}
+
+// 5. GetPublishedFiltered — список с фильтром по цене
+func (r *Repository) GetPublishedFiltered(minPrice, maxPrice int) ([]Service, error) {
+	var services []Service
+	query := r.DB.Where("status = ?", "published")
+
+	if minPrice > 0 {
+		query = query.Where("price >= ?", minPrice)
+	}
+	if maxPrice > 0 {
+		query = query.Where("price <= ?", maxPrice)
+	}
+
+	err := query.Order("id ASC").Find(&services).Error
+	return services, err
+}
+
+// 6. CreateDraft — создание черновика
+func (r *Repository) CreateDraft(s *Service) error {
+	s.Status = "draft"
+	s.CreatedAt = time.Now()
+	s.UpdatedAt = time.Now()
+	return r.DB.Create(s).Error
+}
+
+// 7. UpdateDraftTitle — обновление названия черновика
+func (r *Repository) UpdateDraftTitle(id int, title string) error {
+	return r.DB.Model(&Service{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"title":      title,
+		"updated_at": time.Now(),
+	}).Error
+}
+
+// 8. PublishDraft — публикация черновика
+func (r *Repository) PublishDraft(id int, description string, price int, deadlineStr string) error {
+	var deadline *time.Time
+	if deadlineStr != "" {
+		parsed, err := time.Parse("2006-01-02T15:04", deadlineStr)
+		if err == nil {
+			deadline = &parsed
 		}
 	}
-	sort.Slice(res, func(i, j int) bool { return res[i].ID < res[j].ID })
-	return res, nil
+
+	updates := map[string]interface{}{
+		"status":      "published",
+		"description": description,
+		"price":       price,
+		"updated_at":  time.Now(),
+	}
+	if deadline != nil {
+		updates["deadline"] = deadline
+	}
+
+	return r.DB.Model(&Service{}).Where("id = ? AND status = ?", id, "draft").Updates(updates).Error
 }
 
-func (r *Repository) GetPublishedByID(id int) (BusinessServicesOrder, error) {
-	for _, o := range r.orders {
-		if o.ID == id && o.Status == StatusPublished {
-			return o, nil
-		}
+// 9. LogicalDeleteSQL — удаление через чистый SQL
+func (r *Repository) LogicalDeleteSQL(id int) error {
+	sqlDB, err := r.DB.DB()
+	if err != nil {
+		return fmt.Errorf("не удалось получить *sql.DB: %w", err)
 	}
-	return BusinessServicesOrder{}, fmt.Errorf("услуга %d не найдена", id)
-}
 
-func (r *Repository) GetNextPublished(id int) (BusinessServicesOrder, error) {
-	orders, _ := r.GetPublished()
-	for i, o := range orders {
-		if o.ID == id {
-			if i+1 < len(orders) {
-				return orders[i+1], nil
-			}
-			return orders[0], nil
-		}
+	query := `UPDATE services SET status = 'deleted', updated_at = NOW() WHERE id = $1 AND status != 'deleted' RETURNING id`
+	var returnedID int
+	err = sqlDB.QueryRowContext(context.Background(), query, id).Scan(&returnedID)
+	if err != nil {
+		return fmt.Errorf("ошибка логического удаления: %w", err)
 	}
-	if len(orders) > 0 {
-		return orders[0], nil
-	}
-	return BusinessServicesOrder{}, fmt.Errorf("нет опубликованных услуг")
-}
-
-func (r *Repository) GetDraft() (BusinessServicesOrder, error) {
-	for _, o := range r.orders {
-		if o.Status == StatusDraft {
-			return o, nil
-		}
-	}
-	return BusinessServicesOrder{}, fmt.Errorf("черновик не найден")
-}
-
-func (r *Repository) GetPublishedFiltered(minPrice, maxPrice int) ([]BusinessServicesOrder, error) {
-	all, _ := r.GetPublished()
-	var res []BusinessServicesOrder
-	for _, o := range all {
-		if (minPrice == 0 || o.Price >= minPrice) && (maxPrice == 0 || o.Price <= maxPrice) {
-			res = append(res, o)
-		}
-	}
-	return res, nil
+	return nil
 }

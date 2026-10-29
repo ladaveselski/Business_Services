@@ -7,28 +7,44 @@
   <main class="screen">
     <h1 class="screen-title">Все заявки</h1>
 
-    <!-- Фильтр по цене (числовое поле, не текстовое) -->
+    <!-- Форма фильтрации по цене -->
     <form action="/business_services_grid" method="GET" class="filter">
-      <input type="number" name="min" class="input" placeholder="Цена от" value="{{ .min }}" />
-      <input type="number" name="max" class="input" placeholder="до" value="{{ .max }}" />
+      <input type="number" name="min" class="input" placeholder="Цена от" value="{{ .min }}" min="0" />
+      <input type="number" name="max" class="input" placeholder="до" value="{{ .max }}" min="0" />
       <button type="submit" class="btn btn-primary filter__btn">Применить</button>
     </form>
 
-    <!-- Сетка 2 столбца -->
+    {{ if .min | or .max }}
+    <a href="/business_services_grid" class="filter-reset">Сбросить фильтр</a>
+    {{ end }}
+
+    <!-- Сетка карточек -->
+    {{ if .cards }}
     <div class="grid">
       {{ range .cards }}
-      <a class="grid-card" href="/business_services_feed/{{ .ID }}">
-        <div class="grid-card__media" style="background-image: url('{{ .ImageURL }}');">
-          <div class="grid-card__likes">
-            {{ template "like_icon" . }}
-            <span>{{ .Likes }}</span>
+      <div class="grid-card-wrapper">
+        <a class="grid-card" href="/business_services_feed/{{ .ID }}">
+          <div class="grid-card__media" style="background-image: url('{{ .ImageURL }}');">
+            <div class="grid-card__likes">
+              {{ template "like_icon" . }}
+              <span>{{ .Likes }}</span>
+            </div>
           </div>
-        </div>
-        <h3 class="grid-card__title">{{ .Title }}</h3>
-        <span class="grid-card__price">{{ .Price }} ₽</span>
-      </a>
+          <h3 class="grid-card__title">{{ .Title }}</h3>
+          <span class="grid-card__price">{{ .Price }} ₽</span>
+        </a>
+        
+        <!-- Кнопка удаления (отправляет POST) -->
+        <form action="/business_services_delete" method="POST" class="delete-form">
+          <input type="hidden" name="id" value="{{ .ID }}">
+          <button type="submit" class="btn-delete" onclick="return confirm('Удалить заявку?')">Удалить</button>
+        </form>
+      </div>
       {{ end }}
     </div>
+    {{ else }}
+    <p class="empty">Ничего не найдено. Попробуйте изменить фильтр.</p>
+    {{ end }}
   </main>
 
   {{ template "bottom_nav" . }}
