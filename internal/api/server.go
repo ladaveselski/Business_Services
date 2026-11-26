@@ -6,15 +6,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 
 	"business_services/internal/app/handler"
 	"business_services/internal/app/repository"
 	"business_services/internal/storage"
 )
 
-func StartServer() {
+func StartServer(db *gorm.DB) {
 	log.Println("Starting server")
 
+	// ---------- Storage ----------
 	st, err := storage.NewStorage(storage.Config{
 		Endpoint:  env("MINIO_ENDPOINT", "localhost:9000"),
 		AccessKey: env("MINIO_ACCESS_KEY", "admin"),
@@ -31,13 +33,11 @@ func StartServer() {
 		log.Println("Режим: локальные файлы (resources/seed/)")
 	}
 
-	repo, err := repository.NewRepository()
-	if err != nil {
-		logrus.WithError(err).Fatal("репозиторий")
-	}
-
+	// ---------- Repository ----------
+	repo := repository.New(db)
 	h := handler.NewHandler(repo, st)
 
+	// ---------- Router ----------
 	r := gin.Default()
 
 	r.LoadHTMLFiles(
@@ -51,19 +51,45 @@ func StartServer() {
 
 	r.Static("/static", "./resources")
 
-	// Корень редиректит на ленту
+	// ---------- HTML-страницы ----------
 	r.GET("/", func(c *gin.Context) {
 		c.Redirect(302, "/business_services_feed")
 	})
-
-	// Все маршруты — плоские, с подчёркиваниями
 	r.GET("/business_services_feed", h.Feed)
 	r.GET("/business_services_feed/:id", h.Feed)
 	r.GET("/business_services_add", h.AddPage)
 	r.GET("/business_services_grid", h.Grid)
 	r.GET("/business_services_media/*key", h.Media)
 
-	r.Run(":8080")
+	// ---------- API ----------
+	api := r.Group("/api")
+	{
+		// Домен услуг
+		bs := api.Group("/business_services")
+		{
+			bs.GET("", h.APIList)
+			bs.GET("/feed", h.APIFeed)
+			bs.GET("/feed/:id", h.APIFeed)
+			bs.GET("/draft", h.APIDraft)
+			bs.POST("", h.APICreate)
+			bs.PUT("/:id/publish", h.APIPublish)
+			bs.DELETE("/:id", h.APIDelete)
+			bs.POST("/:id/like", h.APILike)
+		}
+
+		// Домен пользователей (заглушки)
+		users := api.Group("/business_services_users")
+		{
+			users.POST("/register", h.APIRegister)
+			users.POST("/login", h.APILogin)
+			users.POST("/logout", h.APILogout)
+		}
+	}
+
+	log.Println("Сервер слушает :8080")
+	if err := r.Run(":8080"); err != nil {
+		logrus.WithError(err).Fatal("сервер упал")
+	}
 	log.Println("Server down")
 }
 
